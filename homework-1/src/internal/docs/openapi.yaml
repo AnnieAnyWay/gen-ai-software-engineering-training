@@ -1,0 +1,442 @@
+openapi: 3.0.3
+info:
+  title: Banking Transactions API
+  version: 1.0.0
+  description: |
+    In-memory banking API (Homework 1, GenAI for Software Engineering).
+
+    **Getting started**
+    1. `POST /auth/register` to create a user.
+    2. `POST /auth/login` to get an `accessToken`. Click **Authorize** and paste it.
+    3. `POST /accounts` to open an account (you get an `ACC-XXXXX` id).
+    4. Deposit into it, then withdraw or transfer to any existing account.
+
+    **Rate limiting:** every client IP gets 100 requests per minute (configurable
+    with `RATE_LIMIT`). Every response carries `X-RateLimit-*` headers. Requests
+    over the limit get `429` with a `Retry-After` header.
+servers:
+  - url: http://localhost:3000
+    description: Local
+tags:
+  - name: Auth
+  - name: Accounts
+  - name: Transactions
+  - name: System
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Liveness check
+      security: []
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409":
+          description: Username already taken
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Exchange credentials for a JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "200":
+          description: Access token issued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Token" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user and their accounts
+      responses:
+        "200":
+          description: The authenticated user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username: { type: string, example: anna }
+                  accounts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /accounts:
+    post:
+      tags: [Accounts]
+      summary: Open a new account for the current user
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                name: { type: string, maxLength: 64, example: Savings }
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    get:
+      tags: [Accounts]
+      summary: List the current user's accounts
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  accounts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /accounts/{accountId}/balance:
+    get:
+      tags: [Accounts]
+      summary: Get account balance (one entry per currency)
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Balance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Balance" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /accounts/{accountId}/summary:
+    get:
+      tags: [Accounts]
+      summary: Account summary (totals of completed transactions)
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Summary" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /transactions:
+    post:
+      tags: [Transactions]
+      summary: Create a transaction
+      description: |
+        - `deposit`: needs `toAccount`, which must be yours.
+        - `withdrawal`: needs `fromAccount`, which must be yours.
+        - `transfer`: needs `fromAccount` (yours) and `toAccount` (any existing account).
+
+        If the source account doesn't have enough funds, the transaction is still
+        stored, with `status: failed`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTransaction" }
+            examples:
+              deposit:
+                value: { toAccount: ACC-12345, amount: 1000, currency: USD, type: deposit }
+              transfer:
+                value: { fromAccount: ACC-12345, toAccount: ACC-67890, amount: 100.5, currency: USD, type: transfer }
+              withdrawal:
+                value: { fromAccount: ACC-12345, amount: 50.25, currency: USD, type: withdrawal }
+      responses:
+        "201":
+          description: Transaction recorded
+          headers:
+            Location:
+              schema: { type: string, example: /transactions/6f1c... }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+    get:
+      tags: [Transactions]
+      summary: List transactions touching your accounts
+      parameters:
+        - name: accountId
+          in: query
+          description: Only transactions for this account, which must be yours
+          schema: { type: string, pattern: "^ACC-[A-Za-z0-9]{5}$" }
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/TransactionType" }
+        - name: from
+          in: query
+          description: Start, inclusive. `YYYY-MM-DD` or RFC 3339
+          schema: { type: string, example: "2024-01-01" }
+        - name: to
+          in: query
+          description: End, inclusive. A plain date includes the whole day
+          schema: { type: string, example: "2024-01-31" }
+      responses:
+        "200":
+          description: Matching transactions, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: { type: integer }
+                  transactions:
+                    type: array
+                    items: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /transactions/{id}:
+    get:
+      tags: [Transactions]
+      summary: Get a transaction by id
+      description: Returns 404 for transactions that don't involve any of your accounts.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Transaction
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transaction" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema: { type: string, pattern: "^ACC-[A-Za-z0-9]{5}$", example: ACC-12345 }
+
+  headers:
+    X-RateLimit-Limit:
+      schema: { type: integer, example: 100 }
+    X-RateLimit-Remaining:
+      schema: { type: integer, example: 0 }
+    X-RateLimit-Reset:
+      description: Unix time when the window resets
+      schema: { type: integer }
+    Retry-After:
+      description: Seconds to wait
+      schema: { type: integer, example: 42 }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ValidationError" }
+    Unauthorized:
+      description: Missing, invalid or expired token / bad credentials
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, example: 'Bearer realm="banking-api"' }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: The account belongs to another user
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit: { $ref: "#/components/headers/X-RateLimit-Limit" }
+        X-RateLimit-Remaining: { $ref: "#/components/headers/X-RateLimit-Remaining" }
+        X-RateLimit-Reset: { $ref: "#/components/headers/X-RateLimit-Reset" }
+        Retry-After: { $ref: "#/components/headers/Retry-After" }
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: Too many requests }
+              retryAfterSeconds: { type: integer, example: 42 }
+
+  schemas:
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: { type: string, pattern: "^[a-zA-Z0-9_.-]{3,32}$", example: anna }
+        password: { type: string, minLength: 8, maxLength: 72, format: password, example: s3cret-pass }
+    User:
+      type: object
+      properties:
+        username: { type: string, example: anna }
+        createdAt: { type: string, format: date-time }
+    Token:
+      type: object
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresIn: { type: integer, description: Seconds, example: 3600 }
+        expiresAt: { type: string, format: date-time }
+    Account:
+      type: object
+      properties:
+        id: { type: string, example: ACC-7K2QX }
+        owner: { type: string, example: anna }
+        name: { type: string, example: Savings }
+        createdAt: { type: string, format: date-time }
+    TransactionType:
+      type: string
+      enum: [deposit, withdrawal, transfer]
+    Currency:
+      type: string
+      description: ISO 4217 code
+      enum: [USD, EUR, GBP, JPY, CHF, CAD, AUD, NZD, CNY, SEK, NOK, DKK, PLN, CZK, HUF, UAH, INR, BRL, MXN, SGD, HKD, KRW, TRY, ZAR, ILS]
+    CreateTransaction:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, type]
+      properties:
+        fromAccount: { type: string, pattern: "^ACC-[A-Za-z0-9]{5}$" }
+        toAccount: { type: string, pattern: "^ACC-[A-Za-z0-9]{5}$" }
+        amount: { type: number, exclusiveMinimum: true, minimum: 0, multipleOf: 0.01, example: 100.5 }
+        currency: { $ref: "#/components/schemas/Currency" }
+        type: { $ref: "#/components/schemas/TransactionType" }
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        fromAccount: { type: string, example: ACC-12345 }
+        toAccount: { type: string, example: ACC-67890 }
+        amount: { type: number, example: 100.5 }
+        currency: { $ref: "#/components/schemas/Currency" }
+        type: { $ref: "#/components/schemas/TransactionType" }
+        timestamp: { type: string, format: date-time }
+        status: { type: string, enum: [pending, completed, failed] }
+        failureReason: { type: string, example: insufficient funds }
+    Balance:
+      type: object
+      properties:
+        accountId: { type: string, example: ACC-12345 }
+        balances:
+          type: object
+          additionalProperties: { type: number }
+          example: { USD: 849.25, EUR: 10 }
+    CurrencyTotals:
+      type: object
+      properties:
+        totalDeposits: { type: number }
+        totalWithdrawals: { type: number }
+        totalTransfersIn: { type: number }
+        totalTransfersOut: { type: number }
+    Summary:
+      type: object
+      properties:
+        accountId: { type: string }
+        transactionCount: { type: integer }
+        mostRecentTransactionDate: { type: string, format: date-time, nullable: true }
+        byCurrency:
+          type: object
+          additionalProperties: { $ref: "#/components/schemas/CurrencyTotals" }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+    ValidationError:
+      type: object
+      properties:
+        error: { type: string, example: Validation failed }
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string, example: amount }
+              message: { type: string, example: Amount must be a positive number }

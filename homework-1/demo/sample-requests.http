@@ -1,0 +1,72 @@
+### VS Code REST Client / JetBrains HTTP Client
+@base = http://localhost:3000
+
+### Health (public)
+GET {{base}}/health
+
+### Register
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{"username": "alice", "password": "alice-password"}
+
+### Login: the token is captured automatically (REST Client)
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"username": "alice", "password": "alice-password"}
+
+###
+@token = {{login.response.body.accessToken}}
+
+### Me
+GET {{base}}/auth/me
+Authorization: Bearer {{token}}
+
+### Open account
+# @name acc
+POST {{base}}/accounts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"name": "Main"}
+
+###
+@account = {{acc.response.body.id}}
+
+### Deposit
+POST {{base}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"toAccount": "{{account}}", "amount": 1000, "currency": "USD", "type": "deposit"}
+
+### Withdrawal
+POST {{base}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"fromAccount": "{{account}}", "amount": 50.25, "currency": "USD", "type": "withdrawal"}
+
+### Validation error
+POST {{base}}/transactions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"fromAccount": "12345", "amount": -10.555, "currency": "XYZ", "type": "transfer"}
+
+### List with filters
+GET {{base}}/transactions?accountId={{account}}&type=deposit&from=2024-01-01&to=2099-12-31
+Authorization: Bearer {{token}}
+
+### Balance
+GET {{base}}/accounts/{{account}}/balance
+Authorization: Bearer {{token}}
+
+### Summary
+GET {{base}}/accounts/{{account}}/summary
+Authorization: Bearer {{token}}
+
+### Unauthorized (no token) -> 401
+GET {{base}}/transactions
