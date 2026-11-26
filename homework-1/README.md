@@ -131,6 +131,9 @@ Each request passes through: logging → panic recovery → rate limiter → rou
 | 401 / 403 / 400 / 404 / 429 handling | ![errors](docs/screenshots/04-errors-and-rate-limit.png) |
 | Test suite (`go test -race`) | ![tests](docs/screenshots/05-tests-passing.png) |
 | Swagger UI | ![swagger](docs/screenshots/06-swagger-ui.png) |
+| AI prompts in Claude Code | ![prompts](docs/screenshots/07-ai-prompts-claude-code.png) |
+| AI-generated code (JWT, rate limit, OpenAPI tests) | ![code](docs/screenshots/08-ai-generated-code.png) |
+| Project structure in the editor | ![editor](docs/screenshots/09-project-in-editor.png) |
 
 <div align="center">
 
