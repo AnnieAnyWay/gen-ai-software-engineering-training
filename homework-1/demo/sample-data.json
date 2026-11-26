@@ -1,0 +1,13 @@
+{
+  "users": [
+    {"username": "alice", "password": "alice-password"},
+    {"username": "bob",   "password": "bob-password1"}
+  ],
+  "transactions": [
+    {"as": "alice", "toAccount": "$ALICE",   "amount": 1000.00, "currency": "USD", "type": "deposit"},
+    {"as": "alice", "toAccount": "$ALICE",   "amount": 250.00,  "currency": "EUR", "type": "deposit"},
+    {"as": "alice", "fromAccount": "$ALICE", "toAccount": "$BOB", "amount": 100.50, "currency": "USD", "type": "transfer"},
+    {"as": "alice", "fromAccount": "$ALICE", "amount": 50.25,   "currency": "USD", "type": "withdrawal"},
+    {"as": "bob",   "fromAccount": "$BOB",   "amount": 9999.00, "currency": "USD", "type": "withdrawal"}
+  ]
+}

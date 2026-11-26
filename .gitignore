@@ -56,3 +56,6 @@ temp/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
+
+# Go
+homework-*/src/bin/
